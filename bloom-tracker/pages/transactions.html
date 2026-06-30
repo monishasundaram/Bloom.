@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Transactions — Bloom</title>
+<link rel="stylesheet" href="../css/neo.css">
+<style>
+  .filter-bar { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin-bottom: 20px; }
+  .filter-bar .form-select, .filter-bar .form-input { min-width: 150px; }
+  .search-box { flex: 1; min-width: 200px; }
+  .tx-type-toggle { display: flex; gap: 8px; padding: 4px; border-radius: 14px; }
+  .tx-type-btn { padding: 8px 16px; border-radius: 10px; border: none; background: transparent; cursor: pointer; font-family: var(--font-display); font-size: 0.85rem; font-weight: 500; color: var(--text-muted); transition: all 0.2s; }
+  .tx-type-btn.active.expense { background: var(--danger); color: #fff; }
+  .tx-type-btn.active.income { background: var(--success); color: #fff; }
+  .cat-icon-cell { width: 32px; height: 32px; border-radius: 9px; display: flex; align-items: center; justify-content: center; font-size: 0.95rem; }
+  .icon-picker { display: flex; flex-wrap: wrap; gap: 8px; max-height: 120px; overflow-y: auto; padding: 4px; }
+  .icon-opt { width: 38px; height: 38px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 1.1rem; cursor: pointer; transition: all 0.2s; }
+  .icon-opt.selected { box-shadow: inset 2px 2px 5px var(--shadow-dark), inset -2px -2px 5px var(--shadow-light); background: var(--primary); }
+  .pagination { display: flex; justify-content: center; gap: 8px; margin-top: 20px; }
+  .page-btn { width: 36px; height: 36px; border-radius: 10px; display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 0.85rem; font-family: var(--font-display); }
+  .page-btn.active { background: var(--primary); color: #fff; box-shadow: 3px 3px 8px var(--shadow-dark); }
+</style>
+</head>
+<body>
+
+<div class="app-shell">
+  <div id="navSlot"></div>
+  <div class="main-content">
+    <div id="topbarSlot"></div>
+
+    <div class="page-body">
+      <div class="page-heading">
+        <div>
+          <h1>Transactions</h1>
+          <p>Manage all your income and expenses</p>
+        </div>
+        <button class="btn btn-primary" onclick="openTxModal()">+ Add Transaction</button>
+      </div>
+
+      <div class="card mb-20">
+        <div class="filter-bar">
+          <input type="text" class="form-input search-box" id="searchInput" placeholder="🔍 Search transactions...">
+          <select class="form-select" id="categoryFilter">
+            <option value="">All Categories</option>
+          </select>
+          <select class="form-select" id="sortFilter">
+            <option value="date-desc">Newest First</option>
+            <option value="date-asc">Oldest First</option>
+            <option value="amount-desc">Highest Amount</option>
+            <option value="amount-asc">Lowest Amount</option>
+          </select>
+          <div class="tx-type-toggle neo-inset">
+            <button class="tx-type-btn active" data-type="all" onclick="setTypeFilter('all')">All</button>
+            <button class="tx-type-btn expense" data-type="expense" onclick="setTypeFilter('expense')">Expenses</button>
+            <button class="tx-type-btn income" data-type="income" onclick="setTypeFilter('income')">Income</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div style="overflow-x:auto;">
+          <table class="neo-table" id="txTable">
+            <thead>
+              <tr>
+                <th></th>
+                <th>Description</th>
+                <th>Category</th>
+                <th>Date</th>
+                <th class="text-right">Amount</th>
+                <th class="text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="txTableBody"></tbody>
+          </table>
+        </div>
+        <div id="emptyState"></div>
+        <div class="pagination" id="pagination"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Add/Edit Transaction Modal -->
+<div class="modal-overlay" id="txModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 id="modalTitle">Add Transaction</h3>
+      <button class="btn btn-ghost btn-icon" onclick="closeTxModal()">✕</button>
+    </div>
+    <form id="txForm" novalidate>
+      <input type="hidden" id="txId">
+      <div class="tx-type-toggle neo-inset mb-16" style="width:fit-content;">
+        <button type="button" class="tx-type-btn expense active" id="typeExpenseBtn" onclick="setFormType('expense')">Expense</button>
+        <button type="button" class="tx-type-btn income" id="typeIncomeBtn" onclick="setFormType('income')">Income</button>
+      </div>
+      <input type="hidden" id="formType" value="expense">
+
+      <div class="form-group mb-16">
+        <label class="form-label">Description</label>
+        <input type="text" id="descInput" class="form-input" placeholder="e.g. Grocery shopping" required>
+        <span class="form-error" id="descError">Please enter a description.</span>
+      </div>
+
+      <div class="grid-2 mb-16">
+        <div class="form-group">
+          <label class="form-label">Amount (₹)</label>
+          <input type="number" id="amountInput" class="form-input" placeholder="0.00" min="0.01" step="0.01" required>
+          <span class="form-error" id="amountError">Enter a valid amount greater than 0.</span>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Date</label>
+          <input type="date" id="dateInput" class="form-input" required>
+          <span class="form-error" id="dateError">Please select a date.</span>
+        </div>
+      </div>
+
+      <div class="form-group mb-16">
+        <label class="form-label">Category</label>
+        <select class="form-select" id="catInput" required></select>
+      </div>
+
+      <div class="form-group mb-24">
+        <label class="form-label">Note (optional)</label>
+        <textarea class="form-textarea" id="noteInput" placeholder="Add a note..."></textarea>
+      </div>
+
+      <div class="flex gap-12">
+        <button type="button" class="btn btn-ghost w-full" onclick="closeTxModal()">Cancel</button>
+        <button type="submit" class="btn btn-primary w-full">Save Transaction</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Delete Confirm Modal -->
+<div class="modal-overlay" id="deleteModal">
+  <div class="modal" style="max-width:380px;">
+    <h3 class="mb-12">Delete transaction?</h3>
+    <p class="mb-24">This action cannot be undone.</p>
+    <div class="flex gap-12">
+      <button class="btn btn-ghost w-full" onclick="closeDeleteModal()">Cancel</button>
+      <button class="btn btn-danger w-full" onclick="confirmDelete()">Delete</button>
+    </div>
+  </div>
+</div>
+
+<script src="../js/core.js"></script>
+<script>
+  ThemeManager.init();
+  if (!Auth.requireAuth()) throw new Error('redirect');
+  const session = Auth.getSession();
+
+  document.getElementById('navSlot').innerHTML = buildNav('transactions.html');
+  document.getElementById('topbarSlot').innerHTML = buildTopbar('Transactions');
+
+  let allTx = TxManager.getAll(session.id);
+  let categories = CatManager.getAll(session.id);
+  let typeFilter = 'all';
+  let currentPage = 1;
+  const PAGE_SIZE = 8;
+  let deleteTargetId = null;
+
+  // Populate category filter & form select
+  document.getElementById('categoryFilter').innerHTML += categories.map(c => `<option value="${c.name}">${c.icon} ${c.name}</option>`).join('');
+  document.getElementById('catInput').innerHTML = categories.map(c => `<option value="${c.name}" data-type="${c.type}">${c.icon} ${c.name}</option>`).join('');
+
+  function getCatMeta(name) {
+    return categories.find(c => c.name === name) || { icon: '💳', color: '#A8A8A8' };
+  }
+
+  function setTypeFilter(type) {
+    typeFilter = type;
+    document.querySelectorAll('.tx-type-toggle:not(#txModal *) .tx-type-btn').forEach(b => b.classList.toggle('active', b.dataset.type === type));
+    currentPage = 1;
+    renderTable();
+  }
+
+  function setFormType(type) {
+    document.getElementById('formType').value = type;
+    document.getElementById('typeExpenseBtn').classList.toggle('active', type === 'expense');
+    document.getElementById('typeIncomeBtn').classList.toggle('active', type === 'income');
+    const opts = Array.from(document.getElementById('catInput').options);
+    const match = opts.find(o => o.dataset.type === type);
+    if (match) document.getElementById('catInput').value = match.value;
+  }
+
+  function getFiltered() {
+    let list = [...allTx];
+    const search = document.getElementById('searchInput').value.toLowerCase().trim();
+    const cat = document.getElementById('categoryFilter').value;
+    const sort = document.getElementById('sortFilter').value;
+
+    if (typeFilter !== 'all') list = list.filter(t => t.type === typeFilter);
+    if (search) list = list.filter(t => t.desc.toLowerCase().includes(search) || t.category.toLowerCase().includes(search));
+    if (cat) list = list.filter(t => t.category === cat);
+
+    list.sort((a, b) => {
+      if (sort === 'date-desc') return new Date(b.date) - new Date(a.date);
+      if (sort === 'date-asc') return new Date(a.date) - new Date(b.date);
+      if (sort === 'amount-desc') return Math.abs(b.amount) - Math.abs(a.amount);
+      if (sort === 'amount-asc') return Math.abs(a.amount) - Math.abs(b.amount);
+    });
+    return list;
+  }
+
+  function renderTable() {
+    const filtered = getFiltered();
+    const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+    currentPage = Math.min(currentPage, totalPages);
+    const pageItems = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+
+    document.getElementById('emptyState').innerHTML = filtered.length === 0 ? `
+      <div class="empty-state">
+        <div class="empty-icon">🔍</div>
+        <h3>No transactions found</h3>
+        <p>Try adjusting your filters or add a new transaction</p>
+      </div>` : '';
+
+    document.getElementById('txTable').style.display = filtered.length === 0 ? 'none' : 'table';
+
+    document.getElementById('txTableBody').innerHTML = pageItems.map(t => {
+      const cat = getCatMeta(t.category);
+      return `
+        <tr>
+          <td><div class="cat-icon-cell" style="background:${cat.color}22;color:${cat.color};">${cat.icon}</div></td>
+          <td>
+            <div style="font-weight:500;">${t.desc}</div>
+            ${t.note ? `<div class="label" style="font-size:0.7rem;">${t.note}</div>` : ''}
+          </td>
+          <td><span class="badge badge-primary">${t.category}</span></td>
+          <td>${Fmt.date(t.date)}</td>
+          <td class="text-right" style="font-weight:600;color:${t.type === 'income' ? 'var(--success)' : 'var(--danger)'};">
+            ${t.type === 'income' ? '+' : '-'}${Fmt.currency(t.amount)}
+          </td>
+          <td class="text-right">
+            <button class="btn btn-ghost btn-sm" onclick="editTx('${t.id}')">✏️</button>
+            <button class="btn btn-ghost btn-sm" onclick="openDeleteModal('${t.id}')">🗑️</button>
+          </td>
+        </tr>
+      `;
+    }).join('');
+
+    // Pagination
+    let pagHtml = '';
+    if (totalPages > 1) {
+      for (let i = 1; i <= totalPages; i++) {
+        pagHtml += `<div class="page-btn neo-sm ${i === currentPage ? 'active' : ''}" onclick="goToPage(${i})">${i}</div>`;
+      }
+    }
+    document.getElementById('pagination').innerHTML = pagHtml;
+  }
+
+  function goToPage(p) { currentPage = p; renderTable(); }
+
+  ['searchInput', 'categoryFilter', 'sortFilter'].forEach(id => {
+    document.getElementById(id).addEventListener('input', () => { currentPage = 1; renderTable(); });
+  });
+
+  // ── Modal Logic ──
+  function openTxModal(editId = null) {
+    document.getElementById('txForm').reset();
+    document.querySelectorAll('#txForm .invalid').forEach(el => el.classList.remove('invalid'));
+    document.getElementById('dateInput').value = new Date().toISOString().split('T')[0];
+
+    if (editId) {
+      const t = allTx.find(x => x.id === editId);
+      document.getElementById('modalTitle').textContent = 'Edit Transaction';
+      document.getElementById('txId').value = t.id;
+      document.getElementById('descInput').value = t.desc;
+      document.getElementById('amountInput').value = Math.abs(t.amount);
+      document.getElementById('dateInput').value = t.date;
+      document.getElementById('catInput').value = t.category;
+      document.getElementById('noteInput').value = t.note || '';
+      setFormType(t.type);
+    } else {
+      document.getElementById('modalTitle').textContent = 'Add Transaction';
+      document.getElementById('txId').value = '';
+      setFormType('expense');
+    }
+    document.getElementById('txModal').classList.add('open');
+  }
+  function closeTxModal() { document.getElementById('txModal').classList.remove('open'); }
+  function editTx(id) { openTxModal(id); }
+
+  document.getElementById('txForm').addEventListener('submit', (e) => {
+    e.preventDefault();
+    let valid = true;
+    const desc = document.getElementById('descInput');
+    const amount = document.getElementById('amountInput');
+    const date = document.getElementById('dateInput');
+
+    if (!desc.value.trim()) { desc.classList.add('invalid'); valid = false; } else { desc.classList.remove('invalid'); }
+    if (!amount.value || parseFloat(amount.value) <= 0) { amount.classList.add('invalid'); valid = false; } else { amount.classList.remove('invalid'); }
+    if (!date.value) { date.classList.add('invalid'); valid = false; } else { date.classList.remove('invalid'); }
+
+    if (!valid) return;
+
+    const type = document.getElementById('formType').value;
+    const id = document.getElementById('txId').value;
+    const data = {
+      desc: desc.value.trim(),
+      amount: type === 'income' ? Math.abs(parseFloat(amount.value)) : -Math.abs(parseFloat(amount.value)),
+      category: document.getElementById('catInput').value,
+      date: date.value,
+      type,
+      note: document.getElementById('noteInput').value.trim()
+    };
+
+    if (id) {
+      TxManager.update(session.id, id, data);
+      Notify.show('Transaction updated', 'success');
+    } else {
+      TxManager.add(session.id, data);
+      Notify.show('Transaction added', 'success');
+    }
+
+    allTx = TxManager.getAll(session.id);
+    renderTable();
+    closeTxModal();
+  });
+
+  [document.getElementById('descInput'), document.getElementById('amountInput'), document.getElementById('dateInput')].forEach(inp => {
+    inp.addEventListener('input', () => inp.classList.remove('invalid'));
+  });
+
+  // ── Delete Logic ──
+  function openDeleteModal(id) { deleteTargetId = id; document.getElementById('deleteModal').classList.add('open'); }
+  function closeDeleteModal() { deleteTargetId = null; document.getElementById('deleteModal').classList.remove('open'); }
+  function confirmDelete() {
+    TxManager.delete(session.id, deleteTargetId);
+    allTx = TxManager.getAll(session.id);
+    renderTable();
+    closeDeleteModal();
+    Notify.show('Transaction deleted', 'success');
+  }
+
+  renderTable();
+</script>
+</body>
+</html>

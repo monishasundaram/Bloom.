@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Settings — Bloom</title>
+<link rel="stylesheet" href="../css/neo.css">
+<style>
+  .settings-section { margin-bottom: 24px; }
+  .settings-row { display: flex; align-items: center; justify-content: space-between; padding: 16px 0; border-bottom: 1px solid var(--border); gap: 16px; flex-wrap: wrap; }
+  .settings-row:last-child { border-bottom: none; }
+  .settings-row-label { font-weight: 500; font-size: 0.9rem; }
+  .settings-row-desc { font-size: 0.78rem; color: var(--text-muted); margin-top: 2px; }
+  .profile-header { display: flex; align-items: center; gap: 18px; margin-bottom: 24px; }
+  .profile-avatar-big { width: 72px; height: 72px; border-radius: 50%; background: linear-gradient(135deg, var(--primary), var(--accent)); display: flex; align-items: center; justify-content: center; color: #fff; font-family: var(--font-display); font-weight: 700; font-size: 1.8rem; box-shadow: 6px 6px 14px var(--shadow-dark), -4px -4px 10px var(--shadow-light); }
+  .theme-options { display: flex; gap: 12px; }
+  .theme-option { flex: 1; padding: 16px; border-radius: 16px; cursor: pointer; text-align: center; transition: all 0.2s; }
+  .theme-option.selected { box-shadow: inset 3px 3px 7px var(--shadow-dark), inset -3px -3px 7px var(--shadow-light); }
+  .theme-preview { width: 100%; height: 50px; border-radius: 10px; margin-bottom: 8px; }
+  .danger-zone { border: 1.5px solid rgba(212,115,122,0.3); border-radius: 20px; padding: 20px; }
+</style>
+</head>
+<body>
+
+<div class="app-shell">
+  <div id="navSlot"></div>
+  <div class="main-content">
+    <div id="topbarSlot"></div>
+
+    <div class="page-body">
+      <div class="page-heading">
+        <div>
+          <h1>Settings</h1>
+          <p>Manage your profile, preferences, and data</p>
+        </div>
+      </div>
+
+      <div class="grid-2" style="grid-template-columns: 1.4fr 1fr; align-items: start;">
+        <div>
+          <!-- Profile -->
+          <div class="card settings-section">
+            <h3 class="mb-20">Profile</h3>
+            <div class="profile-header">
+              <div class="profile-avatar-big" id="profileAvatar">?</div>
+              <div>
+                <div style="font-weight:600;font-size:1.1rem;" id="profileName">—</div>
+                <div class="label" id="profileEmail">—</div>
+              </div>
+            </div>
+            <form id="profileForm" novalidate>
+              <div class="form-group mb-16">
+                <label class="form-label">Full Name</label>
+                <input type="text" id="nameInput" class="form-input" required>
+              </div>
+              <div class="form-group mb-20">
+                <label class="form-label">Email Address</label>
+                <input type="email" id="emailInput" class="form-input" disabled>
+              </div>
+              <button type="submit" class="btn btn-primary">Save Profile</button>
+            </form>
+          </div>
+
+          <!-- Preferences -->
+          <div class="card settings-section">
+            <h3 class="mb-20">Appearance</h3>
+            <div class="theme-options mb-20">
+              <div class="theme-option neo-flat" id="lightOption" onclick="selectTheme('light')">
+                <div class="theme-preview" style="background:linear-gradient(135deg,#EDEAF5,#fff);"></div>
+                <span style="font-size:0.85rem;">☀️ Light</span>
+              </div>
+              <div class="theme-option neo-flat" id="darkOption" onclick="selectTheme('dark')">
+                <div class="theme-preview" style="background:linear-gradient(135deg,#1E1A2E,#2A2540);"></div>
+                <span style="font-size:0.85rem;">🌙 Dark</span>
+              </div>
+            </div>
+            <div class="settings-row">
+              <div>
+                <div class="settings-row-label">Currency</div>
+                <div class="settings-row-desc">Display currency for amounts</div>
+              </div>
+              <select class="form-select" id="currencySelect" style="width:140px;">
+                <option value="₹">₹ INR</option>
+                <option value="$">$ USD</option>
+                <option value="€">€ EUR</option>
+                <option value="£">£ GBP</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Data Management -->
+          <div class="card settings-section">
+            <h3 class="mb-20">Data Management</h3>
+            <div class="settings-row">
+              <div>
+                <div class="settings-row-label">Export Data</div>
+                <div class="settings-row-desc">Download all your data as JSON</div>
+              </div>
+              <button class="btn btn-ghost" onclick="exportData()">⬇️ Export</button>
+            </div>
+            <div class="settings-row">
+              <div>
+                <div class="settings-row-label">Export Transactions (CSV)</div>
+                <div class="settings-row-desc">Download transactions as spreadsheet</div>
+              </div>
+              <button class="btn btn-ghost" onclick="exportCSV()">⬇️ Export CSV</button>
+            </div>
+          </div>
+
+          <!-- Danger Zone -->
+          <div class="card">
+            <h3 class="mb-16" style="color:var(--danger);">Danger Zone</h3>
+            <div class="danger-zone">
+              <div class="settings-row">
+                <div>
+                  <div class="settings-row-label">Clear All Data</div>
+                  <div class="settings-row-desc">Permanently delete all transactions, budgets, and goals</div>
+                </div>
+                <button class="btn btn-danger" onclick="openClearModal()">Clear Data</button>
+              </div>
+              <div class="settings-row">
+                <div>
+                  <div class="settings-row-label">Sign Out</div>
+                  <div class="settings-row-desc">Log out of your account</div>
+                </div>
+                <button class="btn btn-ghost" onclick="Auth.logout()">Sign Out</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Account Summary Sidebar -->
+        <div class="card">
+          <h3 class="mb-16">Account Summary</h3>
+          <div id="accountSummary"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="clearModal">
+  <div class="modal" style="max-width:400px;">
+    <h3 class="mb-12">Clear all data?</h3>
+    <p class="mb-24">This will permanently delete all your transactions, budgets, goals, and categories. This action cannot be undone.</p>
+    <div class="flex gap-12">
+      <button class="btn btn-ghost w-full" onclick="closeClearModal()">Cancel</button>
+      <button class="btn btn-danger w-full" onclick="confirmClear()">Yes, Clear Everything</button>
+    </div>
+  </div>
+</div>
+
+<script src="../js/core.js"></script>
+<script>
+  ThemeManager.init();
+  if (!Auth.requireAuth()) throw new Error('redirect');
+  const session = Auth.getSession();
+
+  document.getElementById('navSlot').innerHTML = buildNav('settings.html');
+  document.getElementById('topbarSlot').innerHTML = buildTopbar('Settings');
+
+  document.getElementById('profileAvatar').textContent = session.avatar;
+  document.getElementById('profileName').textContent = session.name;
+  document.getElementById('profileEmail').textContent = session.email;
+  document.getElementById('nameInput').value = session.name;
+  document.getElementById('emailInput').value = session.email;
+
+  const currentTheme = document.documentElement.getAttribute('data-theme');
+  function updateThemeSelection() {
+    const t = document.documentElement.getAttribute('data-theme');
+    document.getElementById('lightOption').classList.toggle('selected', t !== 'dark');
+    document.getElementById('darkOption').classList.toggle('selected', t === 'dark');
+  }
+  updateThemeSelection();
+  function selectTheme(theme) { ThemeManager.set(theme); updateThemeSelection(); }
+
+  const currency = DB.get('currency_' + session.id, '₹');
+  document.getElementById('currencySelect').value = currency;
+  document.getElementById('currencySelect').addEventListener('change', function() {
+    DB.set('currency_' + session.id, this.value);
+    Notify.show('Currency preference saved', 'success');
+  });
+
+  document.getElementById('profileForm').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const nameInput = document.getElementById('nameInput');
+    if (!nameInput.value.trim()) { nameInput.classList.add('invalid'); return; }
+    nameInput.classList.remove('invalid');
+
+    const users = DB.get('users', []);
+    const updated = users.map(u => u.id === session.id ? { ...u, name: nameInput.value.trim() } : u);
+    DB.set('users', updated);
+    DB.set('session', { ...session, name: nameInput.value.trim(), avatar: nameInput.value.trim()[0].toUpperCase() });
+    Notify.show('Profile updated', 'success');
+    setTimeout(() => location.reload(), 800);
+  });
+
+  // Account Summary
+  function renderSummary() {
+    const txCount = TxManager.getAll(session.id).length;
+    const budgetCount = BudgetManager.getAll(session.id).length;
+    const goalCount = GoalManager.getAll(session.id).length;
+    const catCount = CatManager.getAll(session.id).length;
+    const memberSince = DB.get('users', []).find(u => u.id === session.id)?.createdAt;
+
+    const items = [
+      { icon: '💸', label: 'Transactions', value: txCount },
+      { icon: '🎯', label: 'Active Budgets', value: budgetCount },
+      { icon: '🚀', label: 'Savings Goals', value: goalCount },
+      { icon: '🏷️', label: 'Categories', value: catCount },
+      { icon: '📅', label: 'Member Since', value: memberSince ? Fmt.date(memberSince) : '—' }
+    ];
+    document.getElementById('accountSummary').innerHTML = items.map(i => `
+      <div class="settings-row">
+        <span class="flex items-center gap-8" style="font-size:0.85rem;color:var(--text-muted);">${i.icon} ${i.label}</span>
+        <span style="font-weight:600;font-family:var(--font-display);">${i.value}</span>
+      </div>
+    `).join('');
+  }
+  renderSummary();
+
+  // Export
+  function exportData() {
+    const data = {
+      profile: session,
+      transactions: TxManager.getAll(session.id),
+      budgets: BudgetManager.getAll(session.id),
+      goals: GoalManager.getAll(session.id),
+      categories: CatManager.getAll(session.id),
+      exportedAt: new Date().toISOString()
+    };
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `bloom-export-${new Date().toISOString().split('T')[0]}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    Notify.show('Data exported successfully', 'success');
+  }
+
+  function exportCSV() {
+    const tx = TxManager.getAll(session.id);
+    if (tx.length === 0) { Notify.show('No transactions to export', 'warning'); return; }
+    const headers = ['Date', 'Description', 'Category', 'Type', 'Amount', 'Note'];
+    const rows = tx.map(t => [t.date, `"${t.desc.replace(/"/g, '""')}"`, t.category, t.type, t.amount, `"${(t.note || '').replace(/"/g, '""')}"`]);
+    const csv = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `bloom-transactions-${new Date().toISOString().split('T')[0]}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    Notify.show('Transactions exported as CSV', 'success');
+  }
+
+  function openClearModal() { document.getElementById('clearModal').classList.add('open'); }
+  function closeClearModal() { document.getElementById('clearModal').classList.remove('open'); }
+  function confirmClear() {
+    DB.remove(`tx_${session.id}`);
+    DB.remove(`budgets_${session.id}`);
+    DB.remove(`goals_${session.id}`);
+    DB.remove(`cats_${session.id}`);
+    DB.remove(`notifs_${session.id}`);
+    closeClearModal();
+    Notify.show('All data cleared', 'success');
+    setTimeout(() => location.reload(), 800);
+  }
+
+  document.getElementById('nameInput').addEventListener('input', function() { this.classList.remove('invalid'); });
+</script>
+</body>
+</html>

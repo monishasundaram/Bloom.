@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dashboard — Bloom</title>
+<link rel="stylesheet" href="../css/neo.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  .welcome-card {
+    padding: 28px; display: flex; align-items: center; justify-content: space-between; gap: 20px; flex-wrap: wrap;
+    background: linear-gradient(135deg, var(--surface), var(--bg-alt));
+  }
+  .welcome-text h2 { margin-bottom: 4px; }
+  .stat-value { font-size: 1.6rem; }
+  .stat-trend { font-size: 0.78rem; display: flex; align-items: center; gap: 4px; }
+  .chart-card { padding: 24px; }
+  .chart-card .chart-wrap { height: 260px; }
+  .recent-tx-row { display: flex; align-items: center; gap: 14px; padding: 12px 0; border-bottom: 1px solid var(--border); }
+  .recent-tx-row:last-child { border-bottom: none; }
+  .tx-icon {
+    width: 42px; height: 42px; border-radius: 12px; display: flex; align-items: center; justify-content: center;
+    font-size: 1.1rem; flex-shrink: 0; box-shadow: 3px 3px 7px var(--shadow-dark), -3px -3px 7px var(--shadow-light);
+  }
+  .budget-mini { padding: 14px 0; border-bottom: 1px solid var(--border); }
+  .budget-mini:last-child { border-bottom: none; }
+</style>
+</head>
+<body>
+
+<div class="app-shell">
+  <div id="navSlot"></div>
+  <div class="main-content">
+    <div id="topbarSlot"></div>
+
+    <div class="page-body">
+      <!-- Welcome -->
+      <div class="card welcome-card mb-24 animate-in">
+        <div class="welcome-text">
+          <h2 id="welcomeName">Welcome back!</h2>
+          <p id="todayDate">Here's your financial overview</p>
+        </div>
+        <a href="transactions.html" class="btn btn-primary">+ Add Transaction</a>
+      </div>
+
+      <!-- Stat Widgets -->
+      <div class="grid-4 mb-24" id="statGrid"></div>
+
+      <!-- Charts Row -->
+      <div class="grid-2 mb-24">
+        <div class="card chart-card animate-in">
+          <div class="flex items-center justify-between mb-16">
+            <h3>Spending by Category</h3>
+          </div>
+          <div class="chart-wrap"><canvas id="categoryPie"></canvas></div>
+        </div>
+        <div class="card chart-card animate-in">
+          <div class="flex items-center justify-between mb-16">
+            <h3>Income vs Expense (6 Months)</h3>
+          </div>
+          <div class="chart-wrap"><canvas id="trendBar"></canvas></div>
+        </div>
+      </div>
+
+      <!-- Recent + Budgets -->
+      <div class="grid-2">
+        <div class="card animate-in">
+          <div class="flex items-center justify-between mb-16">
+            <h3>Recent Transactions</h3>
+            <a href="transactions.html" style="font-size:0.8rem;">View all →</a>
+          </div>
+          <div id="recentTxList"></div>
+        </div>
+
+        <div class="card animate-in">
+          <div class="flex items-center justify-between mb-16">
+            <h3>Budget Status</h3>
+            <a href="budgets.html" style="font-size:0.8rem;">Manage →</a>
+          </div>
+          <div id="budgetMiniList"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="../js/core.js"></script>
+<script src="../js/charts.js"></script>
+<script>
+  ThemeManager.init();
+  if (!Auth.requireAuth()) throw new Error('redirect');
+  const session = Auth.getSession();
+
+  document.getElementById('navSlot').innerHTML = buildNav('dashboard.html');
+  document.getElementById('topbarSlot').innerHTML = buildTopbar('Dashboard');
+
+  document.getElementById('welcomeName').textContent = `Welcome back, ${session.name.split(' ')[0]}! 👋`;
+  document.getElementById('todayDate').textContent = new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+
+  // ── Stats ──
+  const summary = TxManager.getSummary(session.id);
+  const budgets = BudgetManager.getSpending(session.id);
+  const totalBudget = budgets.reduce((s, b) => s + b.limit, 0);
+  const totalSpent = budgets.reduce((s, b) => s + b.spent, 0);
+
+  const stats = [
+    { icon: '💰', label: 'Total Balance', value: Fmt.currency(summary.balance), color: 'var(--primary)', bg: 'rgba(124,107,160,0.15)' },
+    { icon: '📈', label: 'Income (Month)', value: Fmt.currency(summary.income), color: 'var(--success)', bg: 'rgba(110,184,154,0.15)' },
+    { icon: '📉', label: 'Expenses (Month)', value: Fmt.currency(summary.expense), color: 'var(--danger)', bg: 'rgba(212,115,122,0.15)' },
+    { icon: '🎯', label: 'Budget Used', value: totalBudget ? Math.round((totalSpent / totalBudget) * 100) + '%' : 'N/A', color: 'var(--info)', bg: 'rgba(122,184,212,0.15)' }
+  ];
+
+  document.getElementById('statGrid').innerHTML = stats.map(s => `
+    <div class="stat-widget animate-in">
+      <div class="icon-wrap" style="background:${s.bg};color:${s.color};">${s.icon}</div>
+      <span class="label">${s.label}</span>
+      <span class="stat-value display-num">${s.value}</span>
+    </div>
+  `).join('');
+
+  // ── Category Pie ──
+  const catData = TxManager.getByCategory(session.id);
+  const catLabels = Object.keys(catData);
+  const catValues = Object.values(catData);
+  if (catLabels.length > 0) {
+    makePieChart(document.getElementById('categoryPie'), catLabels, catValues);
+  } else {
+    document.getElementById('categoryPie').parentElement.innerHTML = `<div class="empty-state"><div class="empty-icon">📊</div><h3>No data yet</h3><p>Add transactions to see insights</p></div>`;
+  }
+
+  // ── 6-Month Trend ──
+  const allTx = TxManager.getAll(session.id);
+  const months = [];
+  for (let i = 5; i >= 0; i--) {
+    const d = new Date();
+    d.setMonth(d.getMonth() - i);
+    months.push({ label: d.toLocaleDateString('en-IN', { month: 'short' }), month: d.getMonth(), year: d.getFullYear() });
+  }
+  const incomeData = months.map(m => allTx.filter(t => { const d = new Date(t.date); return d.getMonth() === m.month && d.getFullYear() === m.year && t.type === 'income'; }).reduce((s, t) => s + Math.abs(t.amount), 0));
+  const expenseData = months.map(m => allTx.filter(t => { const d = new Date(t.date); return d.getMonth() === m.month && d.getFullYear() === m.year && t.type === 'expense'; }).reduce((s, t) => s + Math.abs(t.amount), 0));
+
+  makeBarChart(document.getElementById('trendBar'), months.map(m => m.label), [
+    { label: 'Income', data: incomeData, backgroundColor: '#7CE8A8', borderRadius: 6 },
+    { label: 'Expense', data: expenseData, backgroundColor: '#E87CA8', borderRadius: 6 }
+  ]);
+
+  // ── Recent Transactions ──
+  const recent = allTx.slice(0, 5);
+  const catIcons = {};
+  CatManager.getAll(session.id).forEach(c => catIcons[c.name] = { icon: c.icon, color: c.color });
+
+  document.getElementById('recentTxList').innerHTML = recent.length ? recent.map(t => {
+    const cat = catIcons[t.category] || { icon: '💳', color: '#A8A8A8' };
+    return `
+      <div class="recent-tx-row">
+        <div class="tx-icon" style="background:${cat.color}22;color:${cat.color};">${cat.icon}</div>
+        <div class="flex-col" style="flex:1;">
+          <span style="font-weight:500;font-size:0.875rem;">${t.desc}</span>
+          <span class="label" style="font-size:0.7rem;">${Fmt.dateShort(t.date)} · ${t.category}</span>
+        </div>
+        <span style="font-weight:600;color:${t.type === 'income' ? 'var(--success)' : 'var(--danger)'};font-family:var(--font-display);">
+          ${t.type === 'income' ? '+' : '-'}${Fmt.currency(t.amount)}
+        </span>
+      </div>
+    `;
+  }).join('') : `<div class="empty-state"><div class="empty-icon">💸</div><h3>No transactions</h3><p>Start by adding your first one</p></div>`;
+
+  // ── Budget Mini List ──
+  document.getElementById('budgetMiniList').innerHTML = budgets.length ? budgets.slice(0, 4).map(b => `
+    <div class="budget-mini">
+      <div class="flex items-center justify-between mb-8">
+        <span class="flex items-center gap-8" style="font-size:0.875rem;font-weight:500;">
+          <span>${b.icon}</span> ${b.category}
+        </span>
+        <span class="label">${Fmt.currency(b.spent)} / ${Fmt.currency(b.limit)}</span>
+      </div>
+      <div class="progress-track">
+        <div class="progress-fill ${b.percent >= 100 ? 'danger' : b.percent >= 80 ? 'warning' : ''}" style="width:${b.percent}%;"></div>
+      </div>
+    </div>
+  `).join('') : `<div class="empty-state"><div class="empty-icon">🎯</div><h3>No budgets set</h3><p>Create one to track spending</p></div>`;
+</script>
+</body>
+</html>

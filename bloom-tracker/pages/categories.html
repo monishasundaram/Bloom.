@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Categories — Bloom</title>
+<link rel="stylesheet" href="../css/neo.css">
+<style>
+  .cat-card { padding: 18px; display: flex; align-items: center; gap: 14px; }
+  .cat-card-icon { width: 48px; height: 48px; border-radius: 14px; display: flex; align-items: center; justify-content: center; font-size: 1.3rem; box-shadow: 3px 3px 7px var(--shadow-dark), -3px -3px 7px var(--shadow-light); flex-shrink: 0; }
+  .cat-card-actions { margin-left: auto; display: flex; gap: 6px; }
+  .icon-picker { display: flex; flex-wrap: wrap; gap: 8px; max-height: 140px; overflow-y: auto; }
+  .icon-opt { width: 38px; height: 38px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 1.1rem; cursor: pointer; }
+  .icon-opt.selected { background: var(--primary); box-shadow: inset 2px 2px 5px rgba(0,0,0,0.2); }
+  .color-picker { display: flex; flex-wrap: wrap; gap: 8px; }
+  .color-opt { width: 32px; height: 32px; border-radius: 50%; cursor: pointer; border: 2px solid transparent; transition: all 0.2s; }
+  .color-opt.selected { border-color: var(--text); transform: scale(1.15); }
+  .section-tabs { display: flex; gap: 8px; padding: 4px; border-radius: 14px; width: fit-content; margin-bottom: 20px; }
+  .section-tab { padding: 8px 18px; border-radius: 10px; border: none; background: transparent; cursor: pointer; font-family: var(--font-display); font-size: 0.85rem; font-weight: 500; color: var(--text-muted); }
+  .section-tab.active { background: var(--primary); color: #fff; }
+</style>
+</head>
+<body>
+
+<div class="app-shell">
+  <div id="navSlot"></div>
+  <div class="main-content">
+    <div id="topbarSlot"></div>
+
+    <div class="page-body">
+      <div class="page-heading">
+        <div>
+          <h1>Categories</h1>
+          <p>Organize your transactions with custom categories</p>
+        </div>
+        <button class="btn btn-primary" onclick="openCatModal()">+ New Category</button>
+      </div>
+
+      <div class="section-tabs neo-inset" id="sectionTabs">
+        <button class="section-tab active" data-type="expense">Expense</button>
+        <button class="section-tab" data-type="income">Income</button>
+      </div>
+
+      <div class="grid-auto" id="catGrid"></div>
+      <div id="emptyState"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Add/Edit Category Modal -->
+<div class="modal-overlay" id="catModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 id="modalTitle">New Category</h3>
+      <button class="btn btn-ghost btn-icon" onclick="closeCatModal()">✕</button>
+    </div>
+    <form id="catForm" novalidate>
+      <input type="hidden" id="catId">
+
+      <div class="form-group mb-16">
+        <label class="form-label">Category Name</label>
+        <input type="text" id="nameInput" class="form-input" placeholder="e.g. Pet Care" required>
+        <span class="form-error" id="nameError">Please enter a category name.</span>
+      </div>
+
+      <div class="form-group mb-16">
+        <label class="form-label">Type</label>
+        <select class="form-select" id="typeInput">
+          <option value="expense">Expense</option>
+          <option value="income">Income</option>
+        </select>
+      </div>
+
+      <div class="form-group mb-16">
+        <label class="form-label">Icon</label>
+        <div class="icon-picker neo-inset" id="iconPicker" style="padding:10px;"></div>
+        <input type="hidden" id="iconInput" value="🏷️">
+      </div>
+
+      <div class="form-group mb-24">
+        <label class="form-label">Color</label>
+        <div class="color-picker" id="colorPicker"></div>
+        <input type="hidden" id="colorInput" value="#7C6BA0">
+      </div>
+
+      <div class="flex gap-12">
+        <button type="button" class="btn btn-ghost w-full" onclick="closeCatModal()">Cancel</button>
+        <button type="submit" class="btn btn-primary w-full">Save Category</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="modal-overlay" id="deleteModal">
+  <div class="modal" style="max-width:380px;">
+    <h3 class="mb-12">Delete category?</h3>
+    <p class="mb-24">Existing transactions in this category will keep their label, but it won't be selectable for new ones.</p>
+    <div class="flex gap-12">
+      <button class="btn btn-ghost w-full" onclick="closeDeleteModal()">Cancel</button>
+      <button class="btn btn-danger w-full" onclick="confirmDelete()">Delete</button>
+    </div>
+  </div>
+</div>
+
+<script src="../js/core.js"></script>
+<script>
+  ThemeManager.init();
+  if (!Auth.requireAuth()) throw new Error('redirect');
+  const session = Auth.getSession();
+
+  document.getElementById('navSlot').innerHTML = buildNav('categories.html');
+  document.getElementById('topbarSlot').innerHTML = buildTopbar('Categories');
+
+  const ICONS = ['🍽️','🚗','🏠','❤️','🛍️','🎬','💡','📱','✈️','🎓','🐾','💪','☕','🎮','📚','🧴','💰','💵','🏦','📈','🎁','🧾','🚌','⚡'];
+  const COLORS = ['#7C6BA0','#A08CC8','#C8A8D8','#E8A87C','#7CB8E8','#7CE8A8','#E87CA8','#E8DC7C','#B87CE8','#A8A8A8'];
+  let currentType = 'expense';
+  let deleteTargetId = null;
+
+  document.getElementById('iconPicker').innerHTML = ICONS.map(i => `<div class="icon-opt neo-sm" data-icon="${i}" onclick="selectIcon('${i}')">${i}</div>`).join('');
+  document.getElementById('colorPicker').innerHTML = COLORS.map(c => `<div class="color-opt" style="background:${c};" data-color="${c}" onclick="selectColor('${c}')"></div>`).join('');
+
+  function selectIcon(icon) {
+    document.getElementById('iconInput').value = icon;
+    document.querySelectorAll('.icon-opt').forEach(el => el.classList.toggle('selected', el.dataset.icon === icon));
+  }
+  function selectColor(color) {
+    document.getElementById('colorInput').value = color;
+    document.querySelectorAll('.color-opt').forEach(el => el.classList.toggle('selected', el.dataset.color === color));
+  }
+
+  document.querySelectorAll('.section-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('.section-tab').forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+      currentType = tab.dataset.type;
+      render();
+    });
+  });
+
+  function render() {
+    const cats = CatManager.getAll(session.id).filter(c => c.type === currentType);
+    document.getElementById('emptyState').innerHTML = cats.length === 0 ? `
+      <div class="empty-state card">
+        <div class="empty-icon">🏷️</div>
+        <h3>No ${currentType} categories</h3>
+        <p>Create one to start organizing your ${currentType}s</p>
+      </div>` : '';
+
+    document.getElementById('catGrid').innerHTML = cats.map(c => `
+      <div class="card cat-card animate-in">
+        <div class="cat-card-icon" style="background:${c.color}22;color:${c.color};">${c.icon}</div>
+        <div>
+          <h4>${c.name}</h4>
+          <span class="badge badge-${c.type === 'income' ? 'success' : 'primary'}">${c.type}</span>
+        </div>
+        <div class="cat-card-actions">
+          <button class="btn btn-ghost btn-icon" style="width:32px;height:32px;" onclick="editCat('${c.id}')">✏️</button>
+          <button class="btn btn-ghost btn-icon" style="width:32px;height:32px;" onclick="openDeleteModal('${c.id}')">🗑️</button>
+        </div>
+      </div>
+    `).join('');
+  }
+
+  function openCatModal(editId = null) {
+    document.getElementById('catForm').reset();
+    document.querySelectorAll('#catForm .invalid').forEach(el => el.classList.remove('invalid'));
+    selectIcon('🏷️');
+    selectColor('#7C6BA0');
+    if (editId) {
+      const c = CatManager.getAll(session.id).find(x => x.id === editId);
+      document.getElementById('modalTitle').textContent = 'Edit Category';
+      document.getElementById('catId').value = c.id;
+      document.getElementById('nameInput').value = c.name;
+      document.getElementById('typeInput').value = c.type;
+      selectIcon(c.icon);
+      selectColor(c.color);
+    } else {
+      document.getElementById('modalTitle').textContent = 'New Category';
+      document.getElementById('catId').value = '';
+      document.getElementById('typeInput').value = currentType;
+    }
+    document.getElementById('catModal').classList.add('open');
+  }
+  function closeCatModal() { document.getElementById('catModal').classList.remove('open'); }
+  function editCat(id) { openCatModal(id); }
+
+  document.getElementById('catForm').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const name = document.getElementById('nameInput');
+    if (!name.value.trim()) { name.classList.add('invalid'); return; }
+    name.classList.remove('invalid');
+
+    const id = document.getElementById('catId').value;
+    const data = {
+      name: name.value.trim(),
+      type: document.getElementById('typeInput').value,
+      icon: document.getElementById('iconInput').value,
+      color: document.getElementById('colorInput').value
+    };
+
+    if (id) {
+      CatManager.update(session.id, id, data);
+      Notify.show('Category updated', 'success');
+    } else {
+      const existing = CatManager.getAll(session.id).find(c => c.name.toLowerCase() === data.name.toLowerCase());
+      if (existing) {
+        Notify.show('A category with this name already exists', 'warning');
+        return;
+      }
+      CatManager.add(session.id, data);
+      Notify.show('Category created', 'success');
+    }
+    render();
+    closeCatModal();
+  });
+
+  document.getElementById('nameInput').addEventListener('input', function() { this.classList.remove('invalid'); });
+
+  function openDeleteModal(id) { deleteTargetId = id; document.getElementById('deleteModal').classList.add('open'); }
+  function closeDeleteModal() { deleteTargetId = null; document.getElementById('deleteModal').classList.remove('open'); }
+  function confirmDelete() {
+    CatManager.delete(session.id, deleteTargetId);
+    render();
+    closeDeleteModal();
+    Notify.show('Category deleted', 'success');
+  }
+
+  render();
+</script>
+</body>
+</html>

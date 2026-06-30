@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Budgets — Bloom</title>
+<link rel="stylesheet" href="../css/neo.css">
+<style>
+  .budget-card { padding: 22px; display: flex; flex-direction: column; gap: 14px; }
+  .budget-card-head { display: flex; align-items: center; gap: 12px; }
+  .budget-card-icon { width: 46px; height: 46px; border-radius: 14px; display: flex; align-items: center; justify-content: center; font-size: 1.3rem; box-shadow: 3px 3px 7px var(--shadow-dark), -3px -3px 7px var(--shadow-light); }
+  .budget-card-actions { margin-left: auto; display: flex; gap: 6px; }
+  .budget-amounts { display: flex; justify-content: space-between; align-items: baseline; }
+  .icon-picker { display: flex; flex-wrap: wrap; gap: 8px; }
+  .icon-opt { width: 38px; height: 38px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 1.1rem; cursor: pointer; }
+  .icon-opt.selected { background: var(--primary); box-shadow: inset 2px 2px 5px rgba(0,0,0,0.2); }
+</style>
+</head>
+<body>
+
+<div class="app-shell">
+  <div id="navSlot"></div>
+  <div class="main-content">
+    <div id="topbarSlot"></div>
+
+    <div class="page-body">
+      <div class="page-heading">
+        <div>
+          <h1>Budgets</h1>
+          <p>Set spending limits and track progress by category</p>
+        </div>
+        <button class="btn btn-primary" onclick="openBudgetModal()">+ Add Budget</button>
+      </div>
+
+      <div class="grid-3 mb-24" id="overviewStats"></div>
+
+      <div class="grid-auto" id="budgetGrid"></div>
+      <div id="emptyState"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Add/Edit Budget Modal -->
+<div class="modal-overlay" id="budgetModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 id="modalTitle">Add Budget</h3>
+      <button class="btn btn-ghost btn-icon" onclick="closeBudgetModal()">✕</button>
+    </div>
+    <form id="budgetForm" novalidate>
+      <input type="hidden" id="budgetId">
+
+      <div class="form-group mb-16">
+        <label class="form-label">Category</label>
+        <select class="form-select" id="categorySelect" required></select>
+      </div>
+
+      <div class="form-group mb-16">
+        <label class="form-label">Monthly Limit (₹)</label>
+        <input type="number" id="limitInput" class="form-input" placeholder="500.00" min="1" step="0.01" required>
+        <span class="form-error" id="limitError">Enter a valid amount greater than 0.</span>
+      </div>
+
+      <div class="form-group mb-24">
+        <label class="form-label">Icon</label>
+        <div class="icon-picker neo-inset" id="iconPicker" style="padding:10px;"></div>
+        <input type="hidden" id="iconInput" value="🎯">
+      </div>
+
+      <div class="flex gap-12">
+        <button type="button" class="btn btn-ghost w-full" onclick="closeBudgetModal()">Cancel</button>
+        <button type="submit" class="btn btn-primary w-full">Save Budget</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="modal-overlay" id="deleteModal">
+  <div class="modal" style="max-width:380px;">
+    <h3 class="mb-12">Delete budget?</h3>
+    <p class="mb-24">This won't delete past transactions, just the budget limit.</p>
+    <div class="flex gap-12">
+      <button class="btn btn-ghost w-full" onclick="closeDeleteModal()">Cancel</button>
+      <button class="btn btn-danger w-full" onclick="confirmDelete()">Delete</button>
+    </div>
+  </div>
+</div>
+
+<script src="../js/core.js"></script>
+<script>
+  ThemeManager.init();
+  if (!Auth.requireAuth()) throw new Error('redirect');
+  const session = Auth.getSession();
+
+  document.getElementById('navSlot').innerHTML = buildNav('budgets.html');
+  document.getElementById('topbarSlot').innerHTML = buildTopbar('Budgets');
+
+  const ICONS = ['🍽️','🚗','🏠','❤️','🛍️','🎬','💡','📱','✈️','🎓','🐾','💪','☕','🎮','📚','🧴'];
+  let categories = CatManager.getAll(session.id).filter(c => c.type === 'expense');
+  let deleteTargetId = null;
+
+  document.getElementById('iconPicker').innerHTML = ICONS.map(i => `<div class="icon-opt neo-sm" data-icon="${i}" onclick="selectIcon('${i}')">${i}</div>`).join('');
+  function selectIcon(icon) {
+    document.getElementById('iconInput').value = icon;
+    document.querySelectorAll('.icon-opt').forEach(el => el.classList.toggle('selected', el.dataset.icon === icon));
+  }
+
+  function refreshCatSelect() {
+    const select = document.getElementById('categorySelect');
+    const existingBudgetCats = BudgetManager.getAll(session.id).map(b => b.category);
+    select.innerHTML = categories.map(c => `<option value="${c.name}" data-icon="${c.icon}" data-color="${c.color}">${c.icon} ${c.name}</option>`).join('');
+  }
+  refreshCatSelect();
+
+  function renderOverview() {
+    const budgets = BudgetManager.getSpending(session.id);
+    const totalLimit = budgets.reduce((s, b) => s + b.limit, 0);
+    const totalSpent = budgets.reduce((s, b) => s + b.spent, 0);
+    const overBudget = budgets.filter(b => b.percent >= 100).length;
+
+    const stats = [
+      { icon: '🎯', label: 'Total Budgeted', value: Fmt.currency(totalLimit), color: 'var(--primary)', bg: 'rgba(124,107,160,0.15)' },
+      { icon: '💸', label: 'Total Spent', value: Fmt.currency(totalSpent), color: 'var(--info)', bg: 'rgba(122,184,212,0.15)' },
+      { icon: '⚠️', label: 'Over Budget', value: overBudget + ' categories', color: overBudget > 0 ? 'var(--danger)' : 'var(--success)', bg: overBudget > 0 ? 'rgba(212,115,122,0.15)' : 'rgba(110,184,154,0.15)' }
+    ];
+    document.getElementById('overviewStats').innerHTML = stats.map(s => `
+      <div class="stat-widget">
+        <div class="icon-wrap" style="background:${s.bg};color:${s.color};">${s.icon}</div>
+        <span class="label">${s.label}</span>
+        <span class="stat-value display-num" style="font-size:1.3rem;">${s.value}</span>
+      </div>
+    `).join('');
+  }
+
+  function renderBudgets() {
+    const budgets = BudgetManager.getSpending(session.id);
+
+    document.getElementById('emptyState').innerHTML = budgets.length === 0 ? `
+      <div class="empty-state card">
+        <div class="empty-icon">🎯</div>
+        <h3>No budgets yet</h3>
+        <p>Create your first budget to start tracking spending limits</p>
+      </div>` : '';
+
+    document.getElementById('budgetGrid').innerHTML = budgets.map(b => {
+      const status = b.percent >= 100 ? 'danger' : b.percent >= 80 ? 'warning' : '';
+      const statusBadge = b.percent >= 100
+        ? `<span class="badge badge-danger">Over budget</span>`
+        : b.percent >= 80
+          ? `<span class="badge badge-warning">Near limit</span>`
+          : `<span class="badge badge-success">On track</span>`;
+      return `
+        <div class="card budget-card animate-in">
+          <div class="budget-card-head">
+            <div class="budget-card-icon" style="background:${b.color}22;color:${b.color};">${b.icon}</div>
+            <div>
+              <h4>${b.category}</h4>
+              ${statusBadge}
+            </div>
+            <div class="budget-card-actions">
+              <button class="btn btn-ghost btn-icon" style="width:32px;height:32px;" onclick="editBudget('${b.id}')">✏️</button>
+              <button class="btn btn-ghost btn-icon" style="width:32px;height:32px;" onclick="openDeleteModal('${b.id}')">🗑️</button>
+            </div>
+          </div>
+          <div class="progress-track">
+            <div class="progress-fill ${status}" style="width:${b.percent}%;"></div>
+          </div>
+          <div class="budget-amounts">
+            <span style="font-size:0.8rem;color:var(--text-muted);">${Fmt.currency(b.spent)} spent</span>
+            <span style="font-size:0.8rem;color:var(--text-light);">of ${Fmt.currency(b.limit)}</span>
+          </div>
+        </div>
+      `;
+    }).join('');
+  }
+
+  function renderAll() { renderOverview(); renderBudgets(); }
+
+  function openBudgetModal(editId = null) {
+    document.getElementById('budgetForm').reset();
+    refreshCatSelect();
+    selectIcon('🎯');
+    if (editId) {
+      const b = BudgetManager.getAll(session.id).find(x => x.id === editId);
+      document.getElementById('modalTitle').textContent = 'Edit Budget';
+      document.getElementById('budgetId').value = b.id;
+      document.getElementById('categorySelect').innerHTML += `<option value="${b.category}" selected>${b.icon} ${b.category}</option>`;
+      document.getElementById('categorySelect').value = b.category;
+      document.getElementById('limitInput').value = b.limit;
+      selectIcon(b.icon);
+    } else {
+      document.getElementById('modalTitle').textContent = 'Add Budget';
+      document.getElementById('budgetId').value = '';
+    }
+    document.getElementById('budgetModal').classList.add('open');
+  }
+  function closeBudgetModal() { document.getElementById('budgetModal').classList.remove('open'); }
+  function editBudget(id) { openBudgetModal(id); }
+
+  document.getElementById('budgetForm').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const limitInput = document.getElementById('limitInput');
+    if (!limitInput.value || parseFloat(limitInput.value) <= 0) {
+      limitInput.classList.add('invalid');
+      return;
+    }
+    limitInput.classList.remove('invalid');
+
+    const id = document.getElementById('budgetId').value;
+    const selectedOption = document.getElementById('categorySelect').selectedOptions[0];
+    const data = {
+      category: document.getElementById('categorySelect').value,
+      limit: parseFloat(limitInput.value),
+      icon: document.getElementById('iconInput').value,
+      color: selectedOption.dataset.color || '#7C6BA0'
+    };
+
+    if (id) {
+      BudgetManager.update(session.id, id, data);
+      Notify.show('Budget updated', 'success');
+    } else {
+      const existing = BudgetManager.getAll(session.id).find(b => b.category === data.category);
+      if (existing) {
+        Notify.show('A budget for this category already exists', 'warning');
+        return;
+      }
+      BudgetManager.add(session.id, data);
+      Notify.show('Budget created', 'success');
+    }
+    renderAll();
+    closeBudgetModal();
+  });
+
+  document.getElementById('limitInput').addEventListener('input', function() { this.classList.remove('invalid'); });
+
+  function openDeleteModal(id) { deleteTargetId = id; document.getElementById('deleteModal').classList.add('open'); }
+  function closeDeleteModal() { deleteTargetId = null; document.getElementById('deleteModal').classList.remove('open'); }
+  function confirmDelete() {
+    BudgetManager.delete(session.id, deleteTargetId);
+    renderAll();
+    closeDeleteModal();
+    Notify.show('Budget deleted', 'success');
+  }
+
+  renderAll();
+</script>
+</body>
+</html>

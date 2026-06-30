@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Notifications — Bloom</title>
+<link rel="stylesheet" href="../css/neo.css">
+<style>
+  .notif-item { display: flex; align-items: flex-start; gap: 14px; padding: 16px; border-radius: 16px; margin-bottom: 10px; cursor: pointer; transition: all 0.2s; }
+  .notif-item.unread { box-shadow: 4px 4px 10px var(--shadow-dark), -4px -4px 10px var(--shadow-light); }
+  .notif-item.read { opacity: 0.65; }
+  .notif-icon { width: 42px; height: 42px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 1.1rem; flex-shrink: 0; }
+  .notif-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--primary); flex-shrink: 0; margin-top: 6px; }
+  .settings-row { display: flex; align-items: center; justify-content: space-between; padding: 14px 0; border-bottom: 1px solid var(--border); }
+  .settings-row:last-child { border-bottom: none; }
+</style>
+</head>
+<body>
+
+<div class="app-shell">
+  <div id="navSlot"></div>
+  <div class="main-content">
+    <div id="topbarSlot"></div>
+
+    <div class="page-body">
+      <div class="page-heading">
+        <div>
+          <h1>Notifications</h1>
+          <p>Stay on top of budget alerts and updates</p>
+        </div>
+        <button class="btn btn-ghost" onclick="markAllRead()">Mark all as read</button>
+      </div>
+
+      <div class="grid-2" style="grid-template-columns: 2fr 1fr; gap: 24px;">
+        <div class="card">
+          <div id="notifList"></div>
+          <div id="emptyState"></div>
+        </div>
+
+        <div class="card" style="height:fit-content;">
+          <h3 class="mb-16">Alert Preferences</h3>
+          <div class="settings-row">
+            <div>
+              <div style="font-weight:500;font-size:0.875rem;">Budget Warnings</div>
+              <div class="label" style="font-size:0.7rem;">Alert at 80% of limit</div>
+            </div>
+            <div class="toggle-wrap" onclick="toggleSetting('budgetWarnings', this)">
+              <div class="toggle on" id="toggle-budgetWarnings"></div>
+            </div>
+          </div>
+          <div class="settings-row">
+            <div>
+              <div style="font-weight:500;font-size:0.875rem;">Over Budget Alerts</div>
+              <div class="label" style="font-size:0.7rem;">Alert when limit exceeded</div>
+            </div>
+            <div class="toggle-wrap" onclick="toggleSetting('overBudgetAlerts', this)">
+              <div class="toggle on" id="toggle-overBudgetAlerts"></div>
+            </div>
+          </div>
+          <div class="settings-row">
+            <div>
+              <div style="font-weight:500;font-size:0.875rem;">Goal Milestones</div>
+              <div class="label" style="font-size:0.7rem;">Celebrate progress</div>
+            </div>
+            <div class="toggle-wrap" onclick="toggleSetting('goalMilestones', this)">
+              <div class="toggle on" id="toggle-goalMilestones"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="../js/core.js"></script>
+<script>
+  ThemeManager.init();
+  if (!Auth.requireAuth()) throw new Error('redirect');
+  const session = Auth.getSession();
+
+  document.getElementById('navSlot').innerHTML = buildNav('notifications.html');
+  document.getElementById('topbarSlot').innerHTML = buildTopbar('Notifications');
+
+  const TYPE_META = {
+    danger:  { icon: '🚨', bg: 'rgba(212,115,122,0.15)', color: 'var(--danger)' },
+    warning: { icon: '⚠️', bg: 'rgba(232,184,109,0.15)', color: 'var(--warning)' },
+    success: { icon: '✅', bg: 'rgba(110,184,154,0.15)', color: 'var(--success)' },
+    info:    { icon: 'ℹ️', bg: 'rgba(122,184,212,0.15)', color: 'var(--info)' }
+  };
+
+  function render() {
+    const notifs = Notify.getAll(session.id);
+    document.getElementById('emptyState').innerHTML = notifs.length === 0 ? `
+      <div class="empty-state">
+        <div class="empty-icon">🔔</div>
+        <h3>No notifications yet</h3>
+        <p>We'll alert you here about budget warnings and milestones</p>
+      </div>` : '';
+
+    document.getElementById('notifList').innerHTML = notifs.map(n => {
+      const meta = TYPE_META[n.type] || TYPE_META.info;
+      return `
+        <div class="notif-item neo-flat ${n.read ? 'read' : 'unread'}" onclick="markRead('${n.id}')">
+          <div class="notif-icon" style="background:${meta.bg};color:${meta.color};">${meta.icon}</div>
+          <div style="flex:1;">
+            <div style="font-size:0.875rem;font-weight:500;">${n.message}</div>
+            <div class="label" style="font-size:0.7rem;">${Fmt.relativeTime(n.time)}</div>
+          </div>
+          ${!n.read ? '<div class="notif-dot"></div>' : ''}
+        </div>
+      `;
+    }).join('');
+  }
+
+  function markRead(id) { Notify.markRead(session.id, id); render(); }
+  function markAllRead() { Notify.markAllRead(session.id); render(); Notify.show('All notifications marked as read', 'success'); }
+
+  function toggleSetting(key, el) {
+    const toggle = el.querySelector('.toggle');
+    const current = toggle.classList.contains('on');
+    toggle.classList.toggle('on', !current);
+    const prefs = DB.get('notif_prefs_' + session.id, {});
+    prefs[key] = !current;
+    DB.set('notif_prefs_' + session.id, prefs);
+  }
+
+  // Load saved prefs
+  const prefs = DB.get('notif_prefs_' + session.id, { budgetWarnings: true, overBudgetAlerts: true, goalMilestones: true });
+  Object.keys(prefs).forEach(key => {
+    const t = document.getElementById('toggle-' + key);
+    if (t) t.classList.toggle('on', prefs[key]);
+  });
+
+  render();
+</script>
+</body>
+</html>

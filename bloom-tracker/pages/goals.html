@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Goals — Bloom</title>
+<link rel="stylesheet" href="../css/neo.css">
+<style>
+  .goal-card { padding: 24px; display: flex; flex-direction: column; gap: 16px; }
+  .goal-ring-wrap { display: flex; align-items: center; gap: 16px; }
+  .goal-ring { position: relative; width: 80px; height: 80px; flex-shrink: 0; }
+  .goal-ring svg { transform: rotate(-90deg); }
+  .goal-ring-pct { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-family: var(--font-display); font-weight: 700; font-size: 0.95rem; }
+  .goal-actions { margin-left: auto; display: flex; gap: 6px; }
+  .icon-picker { display: flex; flex-wrap: wrap; gap: 8px; }
+  .icon-opt { width: 38px; height: 38px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 1.1rem; cursor: pointer; }
+  .icon-opt.selected { background: var(--primary); box-shadow: inset 2px 2px 5px rgba(0,0,0,0.2); }
+  .contribute-row { display: flex; gap: 8px; }
+</style>
+</head>
+<body>
+
+<div class="app-shell">
+  <div id="navSlot"></div>
+  <div class="main-content">
+    <div id="topbarSlot"></div>
+
+    <div class="page-body">
+      <div class="page-heading">
+        <div>
+          <h1>Financial Goals</h1>
+          <p>Save towards what matters most</p>
+        </div>
+        <button class="btn btn-primary" onclick="openGoalModal()">+ New Goal</button>
+      </div>
+
+      <div class="grid-3 mb-24" id="overviewStats"></div>
+
+      <div class="grid-auto" id="goalsGrid"></div>
+      <div id="emptyState"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Add/Edit Goal Modal -->
+<div class="modal-overlay" id="goalModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 id="modalTitle">New Goal</h3>
+      <button class="btn btn-ghost btn-icon" onclick="closeGoalModal()">✕</button>
+    </div>
+    <form id="goalForm" novalidate>
+      <input type="hidden" id="goalId">
+
+      <div class="form-group mb-16">
+        <label class="form-label">Goal Name</label>
+        <input type="text" id="nameInput" class="form-input" placeholder="e.g. Emergency Fund" required>
+        <span class="form-error" id="nameError">Please enter a goal name.</span>
+      </div>
+
+      <div class="grid-2 mb-16">
+        <div class="form-group">
+          <label class="form-label">Target Amount (₹)</label>
+          <input type="number" id="targetInput" class="form-input" placeholder="5000" min="1" step="0.01" required>
+          <span class="form-error" id="targetError">Enter a valid target.</span>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Already Saved (₹)</label>
+          <input type="number" id="savedInput" class="form-input" placeholder="0" min="0" step="0.01">
+        </div>
+      </div>
+
+      <div class="form-group mb-16">
+        <label class="form-label">Target Date</label>
+        <input type="date" id="deadlineInput" class="form-input" required>
+        <span class="form-error" id="deadlineError">Please select a target date.</span>
+      </div>
+
+      <div class="form-group mb-24">
+        <label class="form-label">Icon</label>
+        <div class="icon-picker neo-inset" id="iconPicker" style="padding:10px;"></div>
+        <input type="hidden" id="iconInput" value="🎯">
+      </div>
+
+      <div class="flex gap-12">
+        <button type="button" class="btn btn-ghost w-full" onclick="closeGoalModal()">Cancel</button>
+        <button type="submit" class="btn btn-primary w-full">Save Goal</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Contribute Modal -->
+<div class="modal-overlay" id="contributeModal">
+  <div class="modal" style="max-width:380px;">
+    <h3 class="mb-16">Add Contribution</h3>
+    <div class="form-group mb-20">
+      <label class="form-label">Amount (₹)</label>
+      <input type="number" id="contributeAmount" class="form-input" placeholder="100" min="1" step="0.01">
+      <span class="form-error" id="contributeError">Enter a valid amount.</span>
+    </div>
+    <div class="flex gap-12">
+      <button class="btn btn-ghost w-full" onclick="closeContributeModal()">Cancel</button>
+      <button class="btn btn-primary w-full" onclick="confirmContribute()">Add Funds</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="deleteModal">
+  <div class="modal" style="max-width:380px;">
+    <h3 class="mb-12">Delete goal?</h3>
+    <p class="mb-24">This will permanently remove this savings goal.</p>
+    <div class="flex gap-12">
+      <button class="btn btn-ghost w-full" onclick="closeDeleteModal()">Cancel</button>
+      <button class="btn btn-danger w-full" onclick="confirmDelete()">Delete</button>
+    </div>
+  </div>
+</div>
+
+<script src="../js/core.js"></script>
+<script>
+  ThemeManager.init();
+  if (!Auth.requireAuth()) throw new Error('redirect');
+  const session = Auth.getSession();
+
+  document.getElementById('navSlot').innerHTML = buildNav('goals.html');
+  document.getElementById('topbarSlot').innerHTML = buildTopbar('Goals');
+
+  const ICONS = ['🛡️','✈️','💻','🏠','🚗','💍','🎓','👶','🏥','🎉','📱','⛵','🐾','🏖️','💼','🎸'];
+  const COLORS = ['#7C6BA0','#A08CC8','#C8A8D8','#E8A87C','#7CB8E8','#7CE8A8','#E87CA8','#E8DC7C'];
+  let deleteTargetId = null;
+  let contributeTargetId = null;
+
+  document.getElementById('iconPicker').innerHTML = ICONS.map(i => `<div class="icon-opt neo-sm" data-icon="${i}" onclick="selectIcon('${i}')">${i}</div>`).join('');
+  function selectIcon(icon) {
+    document.getElementById('iconInput').value = icon;
+    document.querySelectorAll('.icon-opt').forEach(el => el.classList.toggle('selected', el.dataset.icon === icon));
+  }
+
+  function describeRing(percent, color) {
+    const r = 34, c = 2 * Math.PI * r;
+    const offset = c - (Math.min(100, percent) / 100) * c;
+    return `
+      <svg width="80" height="80">
+        <circle cx="40" cy="40" r="${r}" fill="none" stroke="var(--shadow-dark)" stroke-width="8"/>
+        <circle cx="40" cy="40" r="${r}" fill="none" stroke="${color}" stroke-width="8"
+          stroke-dasharray="${c}" stroke-dashoffset="${offset}" stroke-linecap="round"/>
+      </svg>`;
+  }
+
+  function daysLeft(deadline) {
+    const diff = new Date(deadline) - new Date();
+    return Math.max(0, Math.ceil(diff / 86400000));
+  }
+
+  function renderOverview() {
+    const goals = GoalManager.getAll(session.id);
+    const totalTarget = goals.reduce((s, g) => s + g.target, 0);
+    const totalSaved = goals.reduce((s, g) => s + g.saved, 0);
+    const completed = goals.filter(g => g.saved >= g.target).length;
+
+    const stats = [
+      { icon: '🎯', label: 'Active Goals', value: goals.length, color: 'var(--primary)', bg: 'rgba(124,107,160,0.15)' },
+      { icon: '💰', label: 'Total Saved', value: Fmt.currency(totalSaved), color: 'var(--success)', bg: 'rgba(110,184,154,0.15)' },
+      { icon: '🏆', label: 'Completed', value: completed, color: 'var(--info)', bg: 'rgba(122,184,212,0.15)' }
+    ];
+    document.getElementById('overviewStats').innerHTML = stats.map(s => `
+      <div class="stat-widget">
+        <div class="icon-wrap" style="background:${s.bg};color:${s.color};">${s.icon}</div>
+        <span class="label">${s.label}</span>
+        <span class="stat-value display-num" style="font-size:1.3rem;">${s.value}</span>
+      </div>
+    `).join('');
+  }
+
+  function renderGoals() {
+    const goals = GoalManager.getAll(session.id);
+    document.getElementById('emptyState').innerHTML = goals.length === 0 ? `
+      <div class="empty-state card">
+        <div class="empty-icon">🚀</div>
+        <h3>No goals yet</h3>
+        <p>Set a savings goal and watch your progress grow</p>
+      </div>` : '';
+
+    document.getElementById('goalsGrid').innerHTML = goals.map(g => {
+      const percent = Math.min(100, Math.round((g.saved / g.target) * 100));
+      const remaining = Math.max(0, g.target - g.saved);
+      const days = daysLeft(g.deadline);
+      const isDone = g.saved >= g.target;
+      return `
+        <div class="card goal-card animate-in">
+          <div class="goal-ring-wrap">
+            <div class="goal-ring">
+              ${describeRing(percent, g.color)}
+              <div class="goal-ring-pct" style="color:${g.color};">${percent}%</div>
+            </div>
+            <div class="flex-col" style="flex:1;">
+              <span style="font-size:1.4rem;">${g.icon}</span>
+              <h4>${g.name}</h4>
+              ${isDone ? `<span class="badge badge-success">Completed! 🎉</span>` : `<span class="label">${days} days left</span>`}
+            </div>
+            <div class="goal-actions">
+              <button class="btn btn-ghost btn-icon" style="width:32px;height:32px;" onclick="editGoal('${g.id}')">✏️</button>
+              <button class="btn btn-ghost btn-icon" style="width:32px;height:32px;" onclick="openDeleteModal('${g.id}')">🗑️</button>
+            </div>
+          </div>
+          <div class="progress-track">
+            <div class="progress-fill" style="width:${percent}%;background:linear-gradient(90deg, ${g.color}, ${g.color}aa);"></div>
+          </div>
+          <div class="flex items-center justify-between">
+            <span style="font-size:0.8rem;color:var(--text-muted);">${Fmt.currency(g.saved)} of ${Fmt.currency(g.target)}</span>
+            <span style="font-size:0.8rem;color:var(--text-light);">${isDone ? 'Goal reached' : Fmt.currency(remaining) + ' to go'}</span>
+          </div>
+          ${!isDone ? `<button class="btn btn-ghost btn-full" onclick="openContributeModal('${g.id}')">+ Add Funds</button>` : ''}
+        </div>
+      `;
+    }).join('');
+  }
+
+  function renderAll() { renderOverview(); renderGoals(); }
+
+  function openGoalModal(editId = null) {
+    document.getElementById('goalForm').reset();
+    document.querySelectorAll('#goalForm .invalid').forEach(el => el.classList.remove('invalid'));
+    selectIcon('🎯');
+    if (editId) {
+      const g = GoalManager.getAll(session.id).find(x => x.id === editId);
+      document.getElementById('modalTitle').textContent = 'Edit Goal';
+      document.getElementById('goalId').value = g.id;
+      document.getElementById('nameInput').value = g.name;
+      document.getElementById('targetInput').value = g.target;
+      document.getElementById('savedInput').value = g.saved;
+      document.getElementById('deadlineInput').value = g.deadline;
+      selectIcon(g.icon);
+    } else {
+      document.getElementById('modalTitle').textContent = 'New Goal';
+      document.getElementById('goalId').value = '';
+      const d = new Date(); d.setMonth(d.getMonth() + 6);
+      document.getElementById('deadlineInput').value = d.toISOString().split('T')[0];
+    }
+    document.getElementById('goalModal').classList.add('open');
+  }
+  function closeGoalModal() { document.getElementById('goalModal').classList.remove('open'); }
+  function editGoal(id) { openGoalModal(id); }
+
+  document.getElementById('goalForm').addEventListener('submit', (e) => {
+    e.preventDefault();
+    let valid = true;
+    const name = document.getElementById('nameInput');
+    const target = document.getElementById('targetInput');
+    const deadline = document.getElementById('deadlineInput');
+
+    if (!name.value.trim()) { name.classList.add('invalid'); valid = false; } else { name.classList.remove('invalid'); }
+    if (!target.value || parseFloat(target.value) <= 0) { target.classList.add('invalid'); valid = false; } else { target.classList.remove('invalid'); }
+    if (!deadline.value) { deadline.classList.add('invalid'); valid = false; } else { deadline.classList.remove('invalid'); }
+
+    if (!valid) return;
+
+    const id = document.getElementById('goalId').value;
+    const data = {
+      name: name.value.trim(),
+      target: parseFloat(target.value),
+      saved: parseFloat(document.getElementById('savedInput').value) || 0,
+      deadline: deadline.value,
+      icon: document.getElementById('iconInput').value,
+      color: COLORS[Math.floor(Math.random() * COLORS.length)]
+    };
+
+    if (id) {
+      const existing = GoalManager.getAll(session.id).find(g => g.id === id);
+      data.color = existing.color;
+      GoalManager.update(session.id, id, data);
+      Notify.show('Goal updated', 'success');
+    } else {
+      GoalManager.add(session.id, data);
+      Notify.show('Goal created', 'success');
+    }
+    renderAll();
+    closeGoalModal();
+  });
+
+  [document.getElementById('nameInput'), document.getElementById('targetInput'), document.getElementById('deadlineInput')].forEach(inp => {
+    inp.addEventListener('input', () => inp.classList.remove('invalid'));
+  });
+
+  // Contribute
+  function openContributeModal(id) {
+    contributeTargetId = id;
+    document.getElementById('contributeAmount').value = '';
+    document.getElementById('contributeAmount').classList.remove('invalid');
+    document.getElementById('contributeModal').classList.add('open');
+  }
+  function closeContributeModal() { document.getElementById('contributeModal').classList.remove('open'); }
+  function confirmContribute() {
+    const input = document.getElementById('contributeAmount');
+    if (!input.value || parseFloat(input.value) <= 0) {
+      input.classList.add('invalid');
+      return;
+    }
+    const goal = GoalManager.getAll(session.id).find(g => g.id === contributeTargetId);
+    const newSaved = goal.saved + parseFloat(input.value);
+    GoalManager.update(session.id, contributeTargetId, { saved: newSaved });
+    renderAll();
+    closeContributeModal();
+    Notify.show(newSaved >= goal.target ? `🎉 Goal "${goal.name}" reached!` : 'Contribution added', 'success');
+  }
+
+  // Delete
+  function openDeleteModal(id) { deleteTargetId = id; document.getElementById('deleteModal').classList.add('open'); }
+  function closeDeleteModal() { deleteTargetId = null; document.getElementById('deleteModal').classList.remove('open'); }
+  function confirmDelete() {
+    GoalManager.delete(session.id, deleteTargetId);
+    renderAll();
+    closeDeleteModal();
+    Notify.show('Goal deleted', 'success');
+  }
+
+  renderAll();
+</script>
+</body>
+</html>
