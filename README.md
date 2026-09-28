@@ -1,11 +1,23 @@
-<div align="center">
+<h1 align="center">🌸 Bloom</h1>
 
-# 🌸 Bloom
+<h3 align="center">A soft, modern personal expense tracker</h3>
 
-### A soft, modern personal expense tracker
-
+<p align="center">
 Track income and expenses, set budgets, reach savings goals, and understand where your money goes, all in a calm Neomorphism interface.
+</p>
 
+<p align="center">
+<img src="https://img.shields.io/badge/HTML5-E34F26?logo=html5&logoColor=white" alt="HTML5">
+<img src="https://img.shields.io/badge/CSS3-1572B6?logo=css3&logoColor=white" alt="CSS3">
+<img src="https://img.shields.io/badge/JavaScript-ES6-F7DF1E?logo=javascript&logoColor=black" alt="JavaScript">
+<img src="https://img.shields.io/badge/Chart.js-FF6384?logo=chartdotjs&logoColor=white" alt="Chart.js">
+<img src="https://img.shields.io/badge/Spring_Boot-6DB33F?logo=springboot&logoColor=white" alt="Spring Boot">
+<img src="https://img.shields.io/badge/MySQL-4479A1?logo=mysql&logoColor=white" alt="MySQL">
+<img src="https://img.shields.io/badge/license-Educational-blue" alt="License">
+</p>
+
+
+---
 
 ## 📑 Table of Contents
 
@@ -205,8 +217,4 @@ This project is developed for educational and learning purposes. You're free to 
 
 ---
 
-<div align="center">
-
-Made with 🌸 by Monisha
-
-</div>
+<p align="center">Made with 🌸 by Monisha</p>
